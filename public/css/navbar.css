@@ -1,0 +1,91 @@
+    * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #f5f5f5;
+  color: #222;
+}
+
+/* --- Header Logo --- */
+.top-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 15px 0;
+}
+
+.logo {
+  height: 190px;
+  align-content: center;
+}
+
+.logoCarrito{
+   height: 60px; 
+}
+
+/* --- Navbar --- */
+.navbar {
+  display: flex; 
+  align-items: center;
+  border-top: 1px solid #aaa;
+  border-bottom: 1px solid #aaa;
+  padding: 10px 50px;
+  background-color: white;
+}
+
+.navbar ul {
+  display: flex;
+  flex-wrap: wrap;          /* ✅ Permite que los elementos salten a otra fila si es necesario */
+  list-style: none;
+  gap: 30px;
+}
+
+.nav-ini{
+  padding: 50px;
+}
+.nav-ini li.break {
+  flex-basis: 100%;        /* ✅ Hace el salto de línea */
+  height: 0;
+  padding: 0;
+  margin: 0;
+}
+.nav-fin{
+   margin-left: auto;
+}
+
+.navbar a {
+  text-decoration: none;
+  color: #333;
+  font-weight: 500;
+  position: relative;
+  padding-bottom: 5px;
+}
+
+.navbar a:hover {
+  color: #000;
+  border-bottom: 2px solid #000;
+}
+
+
+/* --- Hero Section --- */
+
+
+.btn {
+  background-color: transparent;
+  color: white;
+  border: 1.5px solid white;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn:hover {
+  background-color: white;
+  color: black;
+}
