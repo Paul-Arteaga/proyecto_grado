@@ -128,7 +128,7 @@
           <!-- Enlace azul marino -->
           <p class="mt-6 text-sm text-gray-300 text-center">
             ¿No tienes cuenta?
-            <a href="{{ route('register.show') }}" class="text-blue-400 hover:text-blue-300 font-semibold transition">Regístrate</a>
+            <a href="{{ route('register.show') }}" class="text-blue-400 hover:text-blue-300 font-semibold transition">Regístrate Ahora</a>
           </p>
 
         </div>
