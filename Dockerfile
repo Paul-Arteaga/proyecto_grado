@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y \
 # Instalar extensiones de PHP
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
 
-
+# Copiar configuración de PHP
+COPY php.ini /usr/local/etc/php/conf.d/custom.ini
 
 # Obtener Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer

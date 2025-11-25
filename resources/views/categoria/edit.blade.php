@@ -83,29 +83,10 @@
   </div>
 </div>
 
-@push('scripts')
 <script>
-async function patch(url, body) {
-  return fetch(url, {
-    method: 'PATCH',
-    headers: {'X-CSRF-TOKEN': `{{ csrf_token() }}`, 'Accept':'application/json','Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
-}
-
-document.getElementById('btnSyncVehiculos').addEventListener('click', async ()=>{
-  const sel = document.getElementById('vehiculos');
-  const ids = Array.from(sel.selectedOptions).map(o=>o.value);
-  const res = await patch(`{{ route('categoria.syncVehiculos',$categoria) }}`, {vehiculos: ids});
-  if (res.ok) alert('Vínculos de vehículos guardados.');
-});
-
-document.getElementById('btnSyncTarifas').addEventListener('click', async ()=>{
-  const sel = document.getElementById('tarifas');
-  const ids = Array.from(sel.selectedOptions).map(o=>o.value);
-  const res = await patch(`{{ route('categoria.syncTarifas',$categoria) }}`, {tarifas: ids});
-  if (res.ok) alert('Vínculos de tarifas guardados.');
-});
+  window.csrfToken = "{{ csrf_token() }}";
+  window.syncVehiculosUrl = "{{ route('categoria.syncVehiculos',$categoria) }}";
+  window.syncTarifasUrl = "{{ route('categoria.syncTarifas',$categoria) }}";
 </script>
-@endpush
+<script src="{{ asset('js/categoria/edit.js') }}"></script>
 @endsection

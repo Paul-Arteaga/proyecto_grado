@@ -24,11 +24,9 @@
   </div>
 
   <script>
-    // Redirige al home (welcome) en 3 segundos
-    setTimeout(() => {
-      window.location.href = "{{ route('home') }}";
-    }, 3000);
+    window.homeUrl = "{{ route('home') }}";
   </script>
+  <script src="{{ asset('js/auth/register-success.js') }}"></script>
 
 </body>
 </html>

@@ -19,6 +19,8 @@ class Vehiculo extends Model
         'color',
         'transmision',
         'km_actual',
+        'km_inicial',
+        'km_ultimo_mantenimiento',
         'precio_diario',
         'combustible',
         'categoria_id',
@@ -30,6 +32,8 @@ class Vehiculo extends Model
     protected $casts = [
         'anio' => 'integer',
         'km_actual' => 'integer',
+        'km_inicial' => 'integer',
+        'km_ultimo_mantenimiento' => 'integer',
         'precio_diario' => 'decimal:2',
     ];
 
@@ -37,5 +41,10 @@ class Vehiculo extends Model
     public function categoria()
     {
         return $this->belongsTo(Categoria::class, 'categoria_id');
+    }
+
+    public function mantenimientos()
+    {
+        return $this->hasMany(Mantenimiento::class);
     }
 }

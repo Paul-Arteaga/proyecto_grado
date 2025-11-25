@@ -64,22 +64,28 @@ class AuthController extends Controller
     public function storeRegister(Request $request)
     {
         $validated = $request->validate([
+            'name' => ['required','string','max:100'],
             'username' => ['required','string','min:3','max:50','unique:users,username'],
+            'numero_carnet' => ['required','string','unique:users,numero_carnet'],
             'email'    => ['nullable','email', Rule::unique('users','email')],
             'password' => ['required','string','min:8','confirmed'],
-            'id_rol'   => ['nullable','integer'],
         ], [
+            'name.required' => 'El nombre es obligatorio.',
             'username.required' => 'El usuario es obligatorio.',
             'username.unique'   => 'Ese usuario ya existe.',
+            'numero_carnet.required' => 'El número de carnet es obligatorio.',
+            'numero_carnet.unique' => 'Ese número de carnet ya está registrado.',
             'password.confirmed'=> 'Las contraseñas no coinciden.',
         ]);
 
-        // Rol por defecto (ej. 2 = cliente)
-        $validated['id_rol'] = $validated['id_rol'] ?? 2;
+        // Todos los usuarios registrados tienen rol "usuario" (id_rol = 2)
+        $validated['id_rol'] = 2;
 
         // Crea el usuario (hash automático gracias al cast en el modelo)
         $user = User::create([
+            'name' => $validated['name'],
             'username' => $validated['username'],
+            'numero_carnet' => $validated['numero_carnet'],
             'email'    => $validated['email'] ?? null,
             'password' => $validated['password'], // el modelo hace el hash (casts['password' => 'hashed'])
             'id_rol'   => $validated['id_rol'],

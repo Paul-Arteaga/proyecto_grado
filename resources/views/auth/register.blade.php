@@ -27,10 +27,25 @@
       @csrf
 
       <div>
+        <label class="block text-sm text-gray-200 mb-1">Nombre completo <span class="text-red-400">*</span></label>
+        <input type="text" name="name" value="{{ old('name') }}" required
+               class="w-full px-3 py-3 rounded bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-700"
+               placeholder="Tu nombre y apellidos">
+      </div>
+
+      <div>
         <label class="block text-sm text-gray-200 mb-1">Usuario</label>
         <input type="text" name="username" value="{{ old('username') }}" required
                class="w-full px-3 py-3 rounded bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-700"
                placeholder="tuusuario">
+      </div>
+
+      <div>
+        <label class="block text-sm text-gray-200 mb-1">Número de Carnet <span class="text-red-400">*</span></label>
+        <input type="text" name="numero_carnet" value="{{ old('numero_carnet') }}" required
+               class="w-full px-3 py-3 rounded bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-700"
+               placeholder="12345678">
+        <p class="mt-1 text-xs text-gray-400">Este será tu identificador único</p>
       </div>
 
       <div>
@@ -80,20 +95,10 @@
   </div>
 
   <script>
-    // Detectar mensaje de éxito desde el servidor
-    @if (session('success'))
-      // Ocultar formulario y mostrar animación
-      document.getElementById('registerCard').classList.add('hidden');
-      const successAnim = document.getElementById('successAnimation');
-      successAnim.classList.remove('hidden');
-      successAnim.classList.add('flex');
-
-      // Redirigir tras 3 segundos
-      setTimeout(() => {
-        window.location.href = "{{ route('home') }}";
-      }, 3000);
-    @endif
+    window.registerSuccess = @json(session('success') ? true : false);
+    window.homeUrl = "{{ route('home') }}";
   </script>
+  <script src="{{ asset('js/auth/register.js') }}"></script>
 
 </body>
 </html>

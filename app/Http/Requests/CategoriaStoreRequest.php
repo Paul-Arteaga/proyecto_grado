@@ -17,8 +17,8 @@ class CategoriaStoreRequest extends FormRequest
             'nombre'               => ['required','string','max:100','unique:categorias,nombre'],
             'descripcion'          => ['nullable','string','max:2000'],
             'capacidad_pasajeros'  => ['required','integer','min:0','max:255'], // byte
-            // Acepta archivo de imagen (jpg, jpeg, png, webp), hasta ~2MB
-            'imagen'               => ['nullable','image','mimes:jpg,jpeg,png,webp','max:2048'],
+            // Acepta archivo de imagen (jpg, jpeg, png, webp), hasta 10MB
+            'imagen'               => ['nullable','image','mimes:jpg,jpeg,png,webp','max:10240'],
             'activo'               => ['nullable','boolean'],
         ];
     }

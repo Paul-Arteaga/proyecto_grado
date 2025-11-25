@@ -11,58 +11,53 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        // aseguramos roles por si alguien corre solo este seeder
-        $adminRol     = Rol::firstOrCreate(['id' => 1], ['nombre' => 'administrador']);
-        $encargadoRol = Rol::firstOrCreate(['id' => 2], ['nombre' => 'encargado']);
-        $clienteRol   = Rol::firstOrCreate(['id' => 3], ['nombre' => 'cliente']);
+        // Aseguramos roles por si alguien corre solo este seeder
+        $adminRol = Rol::firstOrCreate(['id' => 1], ['nombre' => 'admin']);
+        $usuarioRol = Rol::firstOrCreate(['id' => 2], ['nombre' => 'usuario']);
+        $recepcionistaRol = Rol::firstOrCreate(['id' => 3], ['nombre' => 'recepcionista']);
+        $mantenimientoRol = Rol::firstOrCreate(['id' => 4], ['nombre' => 'area de mantenimiento']);
 
         // ADMIN
         User::updateOrCreate(
             ['username' => 'admin'],
             [
+                'numero_carnet' => '00000001',
                 'email'    => 'admin@mail.com',
                 'password' => Hash::make('admin123'),
                 'id_rol'   => $adminRol->id,
             ]
         );
 
-        // CLIENTE 1
+        // USUARIO 1
         User::updateOrCreate(
-            ['username' => 'cliente1'],
+            ['username' => 'usuario1'],
             [
-                'email'    => 'cliente1@mail.com',
+                'numero_carnet' => '00000002',
+                'email'    => 'usuario1@mail.com',
                 'password' => Hash::make('123456'),
-                'id_rol'   => $clienteRol->id,
+                'id_rol'   => $usuarioRol->id,
             ]
         );
 
-        // CLIENTE 2
+        // RECEPCIONISTA
         User::updateOrCreate(
-            ['username' => 'cliente2'],
+            ['username' => 'recepcionista'],
             [
-                'email'    => 'cliente2@mail.com',
+                'numero_carnet' => '00000003',
+                'email'    => 'recepcionista@mail.com',
                 'password' => Hash::make('123456'),
-                'id_rol'   => $clienteRol->id,
+                'id_rol'   => $recepcionistaRol->id,
             ]
         );
 
-        // CLIENTE 3
+        // AREA DE MANTENIMIENTO
         User::updateOrCreate(
-            ['username' => 'cliente3'],
+            ['username' => 'mantenimiento'],
             [
-                'email'    => 'cliente3@mail.com',
+                'numero_carnet' => '00000004',
+                'email'    => 'mantenimiento@mail.com',
                 'password' => Hash::make('123456'),
-                'id_rol'   => $clienteRol->id,
-            ]
-        );
-
-        // ENCARGADO
-        User::updateOrCreate(
-            ['username' => 'encargado'],
-            [
-                'email'    => 'encargado@mail.com',
-                'password' => Hash::make('123456'),
-                'id_rol'   => $encargadoRol->id,
+                'id_rol'   => $mantenimientoRol->id,
             ]
         );
     }
