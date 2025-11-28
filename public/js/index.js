@@ -1,5 +1,7 @@
 // si por algún motivo arriba NO llegó, lo dejamos como objeto
 window.RESERVAS = window.RESERVAS || {};
+window.RESERVAS_PENDIENTES = window.RESERVAS_PENDIENTES || {};
+const PENDIENTE_MSG = window.reservasPendientesMsg || 'Estas fechas están en proceso de confirmación por otro cliente. Podrás ver el estado actualizado en unos minutos.';
 
 // fecha/hora actual del navegador
 const now = new Date();
@@ -80,6 +82,8 @@ function renderCalendar() {
   }
 
   const ocupados = new Set((window.RESERVAS[vehiculoActual] || []));
+  const pendientes = new Set((window.RESERVAS_PENDIENTES[vehiculoActual] || []));
+  const bloqueosTemporales = new Set((window.BLOQUEOS_TEMPORALES && window.BLOQUEOS_TEMPORALES[vehiculoActual]) || []);
 
   for (let day = 1; day <= daysInMonth; day++) {
     const dateStr = formatDate(currentYear, currentMonth + 1, day);
@@ -104,10 +108,55 @@ function renderCalendar() {
     }
 
     const estaOcupado = ocupados.has(dateStr);
+    const estaPendiente = pendientes.has(dateStr);
+    const estaBloqueadoTemporal = bloqueosTemporales.has(dateStr);
 
     if (esPasado || estaOcupado) {
       btn.classList.add('bg-gray-200','text-gray-400','line-through','cursor-not-allowed');
       btn.disabled = true;
+    } else if (estaPendiente || estaBloqueadoTemporal) {
+      btn.classList.add('bg-amber-100','text-amber-700','border','border-amber-300','cursor-not-allowed');
+      
+      // Buscar qué rango de fechas está pendiente o bloqueado temporalmente
+      let rangoEncontrado = null;
+      let mensaje = PENDIENTE_MSG;
+      
+      // Primero buscar en reservas pendientes
+      const rangosPendientes = (window.RESERVAS_PENDIENTES_RANGOS && window.RESERVAS_PENDIENTES_RANGOS[vehiculoActual]) || [];
+      rangoEncontrado = rangosPendientes.find(r => {
+        const inicio = new Date(r.inicio);
+        const fin = new Date(r.fin);
+        const fechaActual = new Date(dateStr);
+        return fechaActual >= inicio && fechaActual <= fin;
+      });
+      
+      // Si no está en reservas pendientes, buscar en bloqueos temporales
+      if (!rangoEncontrado) {
+        const rangosBloqueos = (window.BLOQUEOS_TEMPORALES_RANGOS && window.BLOQUEOS_TEMPORALES_RANGOS[vehiculoActual]) || [];
+        rangoEncontrado = rangosBloqueos.find(r => {
+          const inicio = new Date(r.inicio);
+          const fin = new Date(r.fin);
+          const fechaActual = new Date(dateStr);
+          return fechaActual >= inicio && fechaActual <= fin;
+        });
+        
+        if (rangoEncontrado) {
+          if (rangoEncontrado.inicio === rangoEncontrado.fin) {
+            mensaje = `La fecha ${rangoEncontrado.inicio_formateado} está siendo procesada por otro cliente. Vuelve a intentarlo en unos minutos.`;
+          } else {
+            mensaje = `Las fechas del ${rangoEncontrado.inicio_formateado} al ${rangoEncontrado.fin_formateado} están siendo procesadas por otro cliente. Vuelve a intentarlo en unos minutos.`;
+          }
+        }
+      } else {
+        if (rangoEncontrado.inicio === rangoEncontrado.fin) {
+          mensaje = `La fecha ${rangoEncontrado.inicio_formateado} está en proceso de confirmación por otro cliente. Revisa nuevamente en unos minutos.`;
+        } else {
+          mensaje = `Las fechas del ${rangoEncontrado.inicio_formateado} al ${rangoEncontrado.fin_formateado} están en proceso de confirmación por otro cliente. Revisa nuevamente en unos minutos.`;
+        }
+      }
+      
+      btn.title = mensaje;
+      btn.onclick = () => alert(mensaje);
     } else {
       btn.classList.add('bg-white','hover:bg-emerald-100','border');
 
@@ -167,6 +216,8 @@ function guardarReserva() {
   })
   .then((data) => {
     if (data.ok) {
+      // Guardar la clave del bloqueo temporal (global para que modal-pago.js pueda acceder)
+      window.bloqueoKeyActual = data.bloqueo_key || null;
       // Cerrar modal de calendario
       closeReservaModal();
       // Abrir modal de pago con los datos
@@ -177,5 +228,7 @@ function guardarReserva() {
     console.error(err);
   });
 }
+
+
 
 

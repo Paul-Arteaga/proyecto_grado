@@ -6,28 +6,97 @@
 
 @php
     use App\Models\Reserva;
+    use Illuminate\Support\Facades\Cache;
 
-    // 1) Traemos solo las reservas CONFIRMADAS (las solicitadas no bloquean el calendario)
-    $reservasRaw = Reserva::where('estado', 'confirmada')
+    // Confirmadas (bloquean el calendario)
+    $reservasConfirmadasRaw = Reserva::where('estado', 'confirmada')
         ->select('vehiculo_id','fecha_inicio','fecha_fin')
         ->get();
 
-    // 2) Construimos: vehiculo_id => ['2025-11-02', '2025-11-03', ...]
-    $reservasPorVehiculo = [];
+    // Solicitudes pendientes/por confirmar
+    $reservasPendientesRaw = Reserva::where('estado', 'solicitada')
+        ->select('vehiculo_id','fecha_inicio','fecha_fin')
+        ->get();
 
-    foreach ($reservasRaw as $r) {
-        $vid = $r->vehiculo_id;
-
-        if (!isset($reservasPorVehiculo[$vid])) {
-            $reservasPorVehiculo[$vid] = [];
+    // Bloqueos temporales (cuando otro usuario tiene el modal de pago abierto)
+    $bloqueosTemporalesPorVehiculo = [];
+    $bloqueosTemporalesRangos = [];
+    
+    // Obtener todos los vehículos que tienen bloqueos temporales
+    $vehiculosConBloqueos = \App\Models\Vehiculo::pluck('id');
+    foreach ($vehiculosConBloqueos as $vehiculoId) {
+        $bloqueosTemporales = Cache::get("bloqueos_temporales_{$vehiculoId}", []);
+        if (is_array($bloqueosTemporales) && !empty($bloqueosTemporales)) {
+            if (!isset($bloqueosTemporalesPorVehiculo[$vehiculoId])) {
+                $bloqueosTemporalesPorVehiculo[$vehiculoId] = [];
+                $bloqueosTemporalesRangos[$vehiculoId] = [];
+            }
+            
+            foreach ($bloqueosTemporales as $bloqueo) {
+                if (is_array($bloqueo) && isset($bloqueo['fecha_inicio']) && isset($bloqueo['fecha_fin'])) {
+                    try {
+                        $inicio = \Carbon\Carbon::parse($bloqueo['fecha_inicio']);
+                        $fin = \Carbon\Carbon::parse($bloqueo['fecha_fin']);
+                        
+                        // Guardar el rango completo
+                        $bloqueosTemporalesRangos[$vehiculoId][] = [
+                            'inicio' => $inicio->format('Y-m-d'),
+                            'fin' => $fin->format('Y-m-d'),
+                            'inicio_formateado' => $inicio->format('d/m/Y'),
+                            'fin_formateado' => $fin->format('d/m/Y'),
+                        ];
+                        
+                        $d = $inicio->copy();
+                        while ($d->lte($fin)) {
+                            $bloqueosTemporalesPorVehiculo[$vehiculoId][] = $d->format('Y-m-d');
+                            $d->addDay();
+                        }
+                    } catch (\Exception $e) {
+                        // Ignorar errores de parseo
+                        continue;
+                    }
+                }
+            }
         }
+    }
 
+    $reservasConfirmadas = [];
+    foreach ($reservasConfirmadasRaw as $r) {
+        $vid = $r->vehiculo_id;
+        if (!isset($reservasConfirmadas[$vid])) {
+            $reservasConfirmadas[$vid] = [];
+        }
         $inicio = \Carbon\Carbon::parse($r->fecha_inicio);
         $fin    = \Carbon\Carbon::parse($r->fecha_fin ?? $r->fecha_inicio);
-
         $d = $inicio->copy();
         while ($d->lte($fin)) {
-            $reservasPorVehiculo[$vid][] = $d->format('Y-m-d');
+            $reservasConfirmadas[$vid][] = $d->format('Y-m-d');
+            $d->addDay();
+        }
+    }
+
+    $reservasPendientes = [];
+    $reservasPendientesRangos = []; // Para almacenar los rangos completos
+    foreach ($reservasPendientesRaw as $r) {
+        $vid = $r->vehiculo_id;
+        if (!isset($reservasPendientes[$vid])) {
+            $reservasPendientes[$vid] = [];
+            $reservasPendientesRangos[$vid] = [];
+        }
+        $inicio = \Carbon\Carbon::parse($r->fecha_inicio);
+        $fin    = \Carbon\Carbon::parse($r->fecha_fin ?? $r->fecha_inicio);
+        
+        // Guardar el rango completo
+        $reservasPendientesRangos[$vid][] = [
+            'inicio' => $inicio->format('Y-m-d'),
+            'fin' => $fin->format('Y-m-d'),
+            'inicio_formateado' => $inicio->format('d/m/Y'),
+            'fin_formateado' => $fin->format('d/m/Y'),
+        ];
+        
+        $d = $inicio->copy();
+        while ($d->lte($fin)) {
+            $reservasPendientes[$vid][] = $d->format('Y-m-d');
             $d->addDay();
         }
     }
@@ -35,7 +104,12 @@
 
 {{-- lo mandamos al JS --}}
 <script>
-    window.RESERVAS = @json($reservasPorVehiculo);
+    window.RESERVAS = @json($reservasConfirmadas);
+    window.RESERVAS_PENDIENTES = @json($reservasPendientes);
+    window.RESERVAS_PENDIENTES_RANGOS = @json($reservasPendientesRangos);
+    window.BLOQUEOS_TEMPORALES = @json($bloqueosTemporalesPorVehiculo);
+    window.BLOQUEOS_TEMPORALES_RANGOS = @json($bloqueosTemporalesRangos);
+    window.reservasPendientesMsg = 'Estas fechas están en proceso de confirmación por otro cliente. Revisa nuevamente en unos minutos.';
 </script>
 
 
@@ -166,12 +240,21 @@
           </div>
         @endif
 
-        <button
-          type="button"
-          onclick="openReservaModal({{ $v->id }}, '{{ $v->marca }} {{ $v->modelo }}')"
-          class="w-full sm:w-auto mt-0 sm:mt-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 sm:px-6 py-2 sm:py-2.5 rounded text-sm sm:text-base">
-          Reservar ahora
-        </button>
+        @if($v->estado === 'mantenimiento')
+          <button
+            type="button"
+            disabled
+            class="w-full sm:w-auto mt-0 sm:mt-3 bg-gray-400 text-white font-semibold px-4 sm:px-6 py-2 sm:py-2.5 rounded text-sm sm:text-base cursor-not-allowed">
+            🔧 En Mantenimiento
+          </button>
+        @else
+          <button
+            type="button"
+            onclick="openReservaModal({{ $v->id }}, '{{ $v->marca }} {{ $v->modelo }}')"
+            class="w-full sm:w-auto mt-0 sm:mt-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 sm:px-6 py-2 sm:py-2.5 rounded text-sm sm:text-base">
+            Reservar ahora
+          </button>
+        @endif
       </div>
     </article>
   @empty
@@ -308,6 +391,7 @@
 
 <script>
   window.reservasPrepararUrl = "{{ route('reservas.preparar') }}";
+  window.liberarBloqueoUrl = "{{ route('reservas.liberarBloqueo') }}";
   window.csrfToken = "{{ csrf_token() }}";
 </script>
 <script src="{{ asset('js/index.js') }}"></script>

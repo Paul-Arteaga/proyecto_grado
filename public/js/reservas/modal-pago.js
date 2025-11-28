@@ -1,20 +1,54 @@
 let montoBaseReserva = 0;
 
 function abrirModalPago(datos) {
-  // Llenar datos del formulario
-  document.getElementById('vehiculo_id_pago').value = datos.vehiculo.id;
-  document.getElementById('fecha_inicio_pago').value = datos.fecha_inicio;
-  document.getElementById('fecha_fin_pago').value = datos.fecha_fin;
-  document.getElementById('fecha_inicio_display').value = datos.fecha_inicio;
-  document.getElementById('fecha_fin_display').value = datos.fecha_fin;
+  // Guardar bloqueo_key y vehiculo_id para liberar después
+  if (datos && datos.bloqueo_key) {
+    window.bloqueoKeyActual = datos.bloqueo_key;
+  } else {
+    window.bloqueoKeyActual = null;
+  }
   
-  document.getElementById('vehiculo_info').textContent = datos.vehiculo.marca + ' ' + datos.vehiculo.modelo;
-  document.getElementById('vehiculo_placa').textContent = datos.vehiculo.placa;
-  document.getElementById('precio_diario').textContent = 'Bs. ' + parseFloat(datos.vehiculo.precio_diario).toFixed(2);
-  document.getElementById('dias_reserva').textContent = datos.dias + ' día(s)';
+  if (datos && datos.vehiculo && datos.vehiculo.id) {
+    window.vehiculoActualModal = datos.vehiculo.id;
+  } else {
+    window.vehiculoActualModal = null;
+  }
+  
+  // Llenar datos del formulario
+  if (datos && datos.vehiculo) {
+    document.getElementById('vehiculo_id_pago').value = datos.vehiculo.id;
+  }
+  if (datos && datos.fecha_inicio) {
+    document.getElementById('fecha_inicio_pago').value = datos.fecha_inicio;
+    document.getElementById('fecha_inicio_display').value = datos.fecha_inicio;
+  }
+  if (datos && datos.fecha_fin) {
+    document.getElementById('fecha_fin_pago').value = datos.fecha_fin;
+    document.getElementById('fecha_fin_display').value = datos.fecha_fin;
+  }
+  
+  // Agregar bloqueo_key al formulario si existe
+  let bloqueoInput = document.getElementById('bloqueo_key_pago');
+  if (!bloqueoInput) {
+    bloqueoInput = document.createElement('input');
+    bloqueoInput.type = 'hidden';
+    bloqueoInput.id = 'bloqueo_key_pago';
+    bloqueoInput.name = 'bloqueo_key';
+    document.getElementById('formPago').appendChild(bloqueoInput);
+  }
+  bloqueoInput.value = (datos && datos.bloqueo_key) ? datos.bloqueo_key : '';
+  
+  if (datos && datos.vehiculo) {
+    document.getElementById('vehiculo_info').textContent = datos.vehiculo.marca + ' ' + datos.vehiculo.modelo;
+    document.getElementById('vehiculo_placa').textContent = datos.vehiculo.placa || '';
+    document.getElementById('precio_diario').textContent = 'Bs. ' + parseFloat(datos.vehiculo.precio_diario || 0).toFixed(2);
+  }
+  if (datos && datos.dias) {
+    document.getElementById('dias_reserva').textContent = datos.dias + ' día(s)';
+  }
   
   // Guardar monto base de la reserva
-  montoBaseReserva = parseFloat(datos.monto_total);
+  montoBaseReserva = parseFloat(datos.monto_total || 0);
   
   // Actualizar total inicial
   actualizarTotalConAccesorios();
@@ -121,8 +155,30 @@ function actualizarTotalConAccesorios() {
 }
 
 function cerrarModalPago() {
+  // Liberar bloqueo temporal si existe
+  if (window.bloqueoKeyActual && window.vehiculoActualModal) {
+    fetch(window.liberarBloqueoUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-CSRF-TOKEN": window.csrfToken
+      },
+      body: JSON.stringify({
+        bloqueo_key: window.bloqueoKeyActual,
+        vehiculo_id: window.vehiculoActualModal
+      })
+    }).catch(err => console.error('Error al liberar bloqueo:', err));
+    
+    // Limpiar variables
+    window.bloqueoKeyActual = null;
+    window.vehiculoActualModal = null;
+  }
+  
   document.getElementById('modalPago').classList.add('hidden');
   document.getElementById('modalPago').classList.remove('flex');
 }
+
+
 
 

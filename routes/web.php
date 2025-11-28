@@ -101,6 +101,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('/reservas')->group(function () {
         Route::get('/', [ReservaController::class, 'index'])->name('reservas.index');
         Route::post('/preparar', [ReservaController::class, 'prepararReserva'])->name('reservas.preparar');
+        Route::post('/liberar-bloqueo', [ReservaController::class, 'liberarBloqueoTemporal'])->name('reservas.liberarBloqueo');
         Route::post('/', [ReservaController::class, 'store'])->name('reservas.store');
         Route::put('/{reserva}', [ReservaController::class, 'update'])->name('reservas.update');
         Route::delete('/{reserva}', [ReservaController::class, 'destroy'])->name('reservas.destroy');

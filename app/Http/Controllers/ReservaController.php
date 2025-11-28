@@ -10,6 +10,7 @@ use App\Models\Accesorio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Cache;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Carbon\Carbon;
 
@@ -77,25 +78,124 @@ class ReservaController extends Controller
         $fechaInicio = $fechas->first();
         $fechaFin = $fechas->last();
 
-        // Verificar disponibilidad (solo reservas confirmadas bloquean fechas)
-        $existe = Reserva::where('vehiculo_id', $request->vehiculo_id)
+        $solapamiento = function ($query) use ($fechaInicio, $fechaFin) {
+            $query->whereBetween('fecha_inicio', [$fechaInicio, $fechaFin])
+                ->orWhereBetween('fecha_fin', [$fechaInicio, $fechaFin])
+                ->orWhere(function($q2) use ($fechaInicio, $fechaFin) {
+                    $q2->where('fecha_inicio', '<=', $fechaInicio)
+                        ->where('fecha_fin', '>=', $fechaFin);
+                });
+        };
+
+        // Reservas confirmadas bloquean inmediatamente
+        $confirmaConflict = Reserva::where('vehiculo_id', $request->vehiculo_id)
             ->where('estado', 'confirmada')
-            ->where(function ($q) use ($fechaInicio, $fechaFin) {
-                $q->whereBetween('fecha_inicio', [$fechaInicio, $fechaFin])
-                  ->orWhereBetween('fecha_fin', [$fechaInicio, $fechaFin])
-                  ->orWhere(function($q2) use ($fechaInicio, $fechaFin) {
-                      $q2->where('fecha_inicio', '<=', $fechaInicio)
-                         ->where('fecha_fin', '>=', $fechaFin);
-                  });
-            })
+            ->where($solapamiento)
             ->exists();
 
-        if ($existe) {
+        if ($confirmaConflict) {
             return response()->json([
                 'ok' => false,
                 'message' => 'Alguno de esos días ya está reservado'
             ], 422);
         }
+
+        // Reservas solicitadas también bloquean mientras se revisan
+        $pendienteConflict = Reserva::where('vehiculo_id', $request->vehiculo_id)
+            ->where('estado', 'solicitada')
+            ->where($solapamiento)
+            ->get();
+
+        if ($pendienteConflict->isNotEmpty()) {
+            $fechasConflict = $pendienteConflict->map(function($r) {
+                $inicio = Carbon::parse($r->fecha_inicio)->format('d/m/Y');
+                $fin = Carbon::parse($r->fecha_fin)->format('d/m/Y');
+                if ($r->fecha_inicio === $r->fecha_fin) {
+                    return $inicio;
+                }
+                return "{$inicio} al {$fin}";
+            })->join(', ');
+            
+            return response()->json([
+                'ok' => false,
+                'message' => "Las fechas {$fechasConflict} están siendo revisadas por otra solicitud. Vuelve a intentarlo en unos minutos."
+            ], 422);
+        }
+
+        // Verificar bloqueos temporales (cuando otro usuario tiene el modal de pago abierto)
+        $userId = Auth::id();
+        $cacheKey = "reserva_temporal_{$request->vehiculo_id}_{$fechaInicio}_{$fechaFin}";
+        
+        // Buscar bloqueos temporales que se solapen con estas fechas
+        $bloqueosTemporales = Cache::get("bloqueos_temporales_{$request->vehiculo_id}", []);
+        
+        // Asegurar que sea un array
+        if (!is_array($bloqueosTemporales)) {
+            $bloqueosTemporales = [];
+        }
+        
+        $hayBloqueo = false;
+        $fechasBloqueadas = [];
+        
+        foreach ($bloqueosTemporales as $key => $bloqueo) {
+            // Verificar que el bloqueo tenga la estructura esperada
+            if (!is_array($bloqueo) || !isset($bloqueo['user_id']) || !isset($bloqueo['fecha_inicio']) || !isset($bloqueo['fecha_fin'])) {
+                continue;
+            }
+            
+            // Solo considerar bloqueos de otros usuarios
+            if ($bloqueo['user_id'] != $userId) {
+                try {
+                    $bloqueoInicio = Carbon::parse($bloqueo['fecha_inicio']);
+                    $bloqueoFin = Carbon::parse($bloqueo['fecha_fin']);
+                    $reqInicio = Carbon::parse($fechaInicio);
+                    $reqFin = Carbon::parse($fechaFin);
+                    
+                    // Verificar solapamiento
+                    if (($reqInicio->lte($bloqueoFin) && $reqFin->gte($bloqueoInicio))) {
+                        $hayBloqueo = true;
+                        $fechasBloqueadas[] = [
+                            'inicio' => $bloqueoInicio->format('d/m/Y'),
+                            'fin' => $bloqueoFin->format('d/m/Y'),
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    // Si hay error al parsear fechas, continuar con el siguiente bloqueo
+                    continue;
+                }
+            }
+        }
+        
+        if ($hayBloqueo) {
+            $fechasTexto = collect($fechasBloqueadas)->map(function($f) {
+                if ($f['inicio'] === $f['fin']) {
+                    return $f['inicio'];
+                }
+                return "{$f['inicio']} al {$f['fin']}";
+            })->join(', ');
+            
+            return response()->json([
+                'ok' => false,
+                'message' => "Las fechas {$fechasTexto} están siendo procesadas por otro cliente. Vuelve a intentarlo en unos minutos."
+            ], 422);
+        }
+
+        // Crear bloqueo temporal (expira en 10 minutos)
+        // Asegurar que $bloqueosTemporales sea un array antes de agregar
+        if (!is_array($bloqueosTemporales)) {
+            $bloqueosTemporales = [];
+        }
+        
+        $bloqueosTemporales[$cacheKey] = [
+            'user_id' => $userId,
+            'vehiculo_id' => $request->vehiculo_id,
+            'fecha_inicio' => $fechaInicio,
+            'fecha_fin' => $fechaFin,
+            'fechas' => $fechas->toArray(),
+            'created_at' => now()->toDateTimeString(),
+        ];
+        Cache::put("bloqueos_temporales_{$request->vehiculo_id}", $bloqueosTemporales, now()->addMinutes(10));
+        Cache::put($cacheKey, true, now()->addMinutes(10));
 
         // Calcular días y monto total
         $dias = Carbon::parse($fechaInicio)->diffInDays(Carbon::parse($fechaFin)) + 1;
@@ -114,7 +214,37 @@ class ReservaController extends Controller
             'fecha_fin' => $fechaFin,
             'dias' => $dias,
             'monto_total' => $montoTotal,
+            'bloqueo_key' => $cacheKey, // Para liberar después
         ]);
+    }
+
+    // Libera un bloqueo temporal cuando se cierra el modal sin enviar
+    public function liberarBloqueoTemporal(Request $request)
+    {
+        $request->validate([
+            'bloqueo_key' => 'required|string',
+            'vehiculo_id' => 'required|integer|exists:vehiculos,id',
+        ]);
+
+        $userId = Auth::id();
+        $bloqueosTemporales = Cache::get("bloqueos_temporales_{$request->vehiculo_id}", []);
+        
+        // Asegurar que sea un array
+        if (!is_array($bloqueosTemporales)) {
+            $bloqueosTemporales = [];
+        }
+        
+        // Solo el usuario que creó el bloqueo puede liberarlo
+        if (isset($bloqueosTemporales[$request->bloqueo_key]) && 
+            is_array($bloqueosTemporales[$request->bloqueo_key]) &&
+            isset($bloqueosTemporales[$request->bloqueo_key]['user_id']) &&
+            $bloqueosTemporales[$request->bloqueo_key]['user_id'] == $userId) {
+            unset($bloqueosTemporales[$request->bloqueo_key]);
+            Cache::put("bloqueos_temporales_{$request->vehiculo_id}", $bloqueosTemporales, now()->addMinutes(10));
+            Cache::forget($request->bloqueo_key);
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     // Guarda la reserva con documentos y pago
@@ -145,21 +275,83 @@ class ReservaController extends Controller
 
         $request->validate($rules);
 
-        // Verificar disponibilidad nuevamente (solo reservas confirmadas bloquean fechas)
-        $existe = Reserva::where('vehiculo_id', $request->vehiculo_id)
-            ->where('estado', 'confirmada') // Solo las confirmadas bloquean
-            ->where(function ($q) use ($request) {
-                $q->whereBetween('fecha_inicio', [$request->fecha_inicio, $request->fecha_fin])
-                  ->orWhereBetween('fecha_fin', [$request->fecha_inicio, $request->fecha_fin])
-                  ->orWhere(function($q2) use ($request) {
-                      $q2->where('fecha_inicio', '<=', $request->fecha_inicio)
-                         ->where('fecha_fin', '>=', $request->fecha_fin);
-                  });
-            })
+        $solapamientoStore = function ($query) use ($request) {
+            $query->whereBetween('fecha_inicio', [$request->fecha_inicio, $request->fecha_fin])
+                ->orWhereBetween('fecha_fin', [$request->fecha_inicio, $request->fecha_fin])
+                ->orWhere(function($q2) use ($request) {
+                    $q2->where('fecha_inicio', '<=', $request->fecha_inicio)
+                       ->where('fecha_fin', '>=', $request->fecha_fin);
+                });
+        };
+
+        // Verificar disponibilidad nuevamente (confirmadas)
+        $confirmaConflict = Reserva::where('vehiculo_id', $request->vehiculo_id)
+            ->where('estado', 'confirmada')
+            ->where($solapamientoStore)
             ->exists();
 
-        if ($existe) {
+        if ($confirmaConflict) {
             return back()->withErrors(['error' => 'Las fechas seleccionadas ya no están disponibles.'])->withInput();
+        }
+
+        // Y solicitudes en revisión
+        $pendienteConflict = Reserva::where('vehiculo_id', $request->vehiculo_id)
+            ->where('estado', 'solicitada')
+            ->where($solapamientoStore)
+            ->get();
+
+        if ($pendienteConflict->isNotEmpty()) {
+            $fechasConflict = $pendienteConflict->map(function($r) {
+                $inicio = Carbon::parse($r->fecha_inicio)->format('d/m/Y');
+                $fin = Carbon::parse($r->fecha_fin)->format('d/m/Y');
+                if ($r->fecha_inicio === $r->fecha_fin) {
+                    return $inicio;
+                }
+                return "{$inicio} al {$fin}";
+            })->join(', ');
+            
+            return back()->withErrors(['error' => "Las fechas {$fechasConflict} están siendo revisadas por otra solicitud. Intenta con otras fechas en unos minutos."])->withInput();
+        }
+
+        // Verificar bloqueos temporales (si viene bloqueo_key, es del mismo usuario, así que está bien)
+        // Pero si no viene, verificar que no haya bloqueos de otros usuarios
+        if (!$request->has('bloqueo_key')) {
+            $bloqueosTemporales = Cache::get("bloqueos_temporales_{$request->vehiculo_id}", []);
+            
+            // Asegurar que sea un array
+            if (!is_array($bloqueosTemporales)) {
+                $bloqueosTemporales = [];
+            }
+            
+            $hayBloqueo = false;
+            
+            foreach ($bloqueosTemporales as $bloqueo) {
+                // Verificar que el bloqueo tenga la estructura esperada
+                if (!is_array($bloqueo) || !isset($bloqueo['user_id']) || !isset($bloqueo['fecha_inicio']) || !isset($bloqueo['fecha_fin'])) {
+                    continue;
+                }
+                
+                if ($bloqueo['user_id'] != $user->id) {
+                    try {
+                        $bloqueoInicio = Carbon::parse($bloqueo['fecha_inicio']);
+                        $bloqueoFin = Carbon::parse($bloqueo['fecha_fin']);
+                        $reqInicio = Carbon::parse($request->fecha_inicio);
+                        $reqFin = Carbon::parse($request->fecha_fin);
+                        
+                        if (($reqInicio->lte($bloqueoFin) && $reqFin->gte($bloqueoInicio))) {
+                            $hayBloqueo = true;
+                            break;
+                        }
+                    } catch (\Exception $e) {
+                        // Si hay error al parsear fechas, continuar con el siguiente bloqueo
+                        continue;
+                    }
+                }
+            }
+            
+            if ($hayBloqueo) {
+                return back()->withErrors(['error' => 'Las fechas seleccionadas están siendo procesadas por otro cliente. Intenta nuevamente en unos minutos.'])->withInput();
+            }
         }
 
         // Calcular monto total del vehículo
@@ -212,6 +404,25 @@ class ReservaController extends Controller
 
         // El comprobante siempre se sube
         $comprobantePago = $request->file('comprobante_pago')->store('reservas/comprobantes', 'public');
+
+        // Liberar bloqueo temporal si existe (ya que ahora pasa a estado "solicitada")
+        if ($request->has('bloqueo_key') && $request->bloqueo_key) {
+            $bloqueosTemporales = Cache::get("bloqueos_temporales_{$request->vehiculo_id}", []);
+            
+            // Asegurar que sea un array
+            if (!is_array($bloqueosTemporales)) {
+                $bloqueosTemporales = [];
+            }
+            
+            if (isset($bloqueosTemporales[$request->bloqueo_key]) && 
+                is_array($bloqueosTemporales[$request->bloqueo_key]) &&
+                isset($bloqueosTemporales[$request->bloqueo_key]['user_id']) &&
+                $bloqueosTemporales[$request->bloqueo_key]['user_id'] == $user->id) {
+                unset($bloqueosTemporales[$request->bloqueo_key]);
+                Cache::put("bloqueos_temporales_{$request->vehiculo_id}", $bloqueosTemporales, now()->addMinutes(10));
+                Cache::forget($request->bloqueo_key);
+            }
+        }
 
         // Crear la solicitud de reserva (NO se confirma automáticamente)
         $reserva = Reserva::create([
